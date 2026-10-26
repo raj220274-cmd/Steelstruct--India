@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>SteelStruct India</title><meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest"><link rel="icon" href="icons/icon.svg">
+<style>
+:root{--bg:#f1f5f9;--card:#fff;--ink:#0f172a;--mut:#64748b;--acc:#d97706;--line:#e2e8f0;--bad:#b91c1c;--ok:#15803d;--warn:#b45309}
+@media(prefers-color-scheme:dark){:root{--bg:#0b1220;--card:#111a2e;--ink:#e5e7eb;--mut:#94a3b8;--line:#243049;--acc:#f59e0b}}
+*{box-sizing:border-box}body{margin:0;font:15px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:72px}
+header{background:#0f172a;color:#fff;padding:12px 16px;position:sticky;top:0;z-index:5;display:flex;justify-content:space-between;align-items:center;gap:8px}
+header h1{font-size:17px;margin:0}header small{color:#cbd5e1;display:block;font-size:11px}
+main{max-width:980px;margin:0 auto;padding:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.card h2{font-size:15px;margin:0 0 8px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+label{font-size:12px;color:var(--mut);display:block}input,select,button,textarea{font:inherit;width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button{width:auto;cursor:pointer;background:var(--acc);color:#111;border:0;font-weight:600;padding:8px 12px}button.sec{background:transparent;color:var(--ink);border:1px solid var(--line)}button.danger{background:var(--bad);color:#fff}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px}
+nav{position:fixed;bottom:0;left:0;right:0;background:#0f172a;display:flex;overflow-x:auto;z-index:6;padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;min-width:72px;background:transparent;color:#cbd5e1;border-radius:0;font-size:12px;padding:12px 6px}nav button.on{color:#fbbf24;border-top:3px solid #fbbf24}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{color:var(--mut);font-weight:600}
+.wrap{overflow-x:auto}td input,td select{min-width:70px;padding:5px}.num{text-align:right}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:600}.t-warn{background:#fef3c7;color:#92400e}.t-bad{background:#fee2e2;color:#991b1b}.t-ok{background:#dcfce7;color:#166534}
+.msg{font-size:13px;margin:4px 0}.bad{color:var(--bad)}.warn{color:var(--warn)}.mut{color:var(--mut)}.kpi{font-size:22px;font-weight:700}
+.banner{background:#fef3c7;color:#78350f;border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:12px}
+</style></head><body>
+<header><div><h1>SteelStruct India</h1><small>Preliminary estimating • v0.1.0 • <span id="net"></span></small></div><span id="status" class="tag t-warn">Preliminary</span></header>
+<main id="app"></main>
+<nav id="nav"></nav>
+<script src="sections.js"></script><script src="engine.js"></script>
+<script>
+const E=SSEngine,$=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const KEY='steelstruct-india-v1';
+const CATS={ismb:'ISMB',ismc:'ISMC',angle:'Angle',shs:'SHS',rhs:'RHS',chs:'CHS / pipe',flat:'Flat',round:'Round bar',square:'Square bar',custom:'Custom',other:'Other'};
+const STRUCT=['Labour shed','Site accommodation shed','Mechanical workshop/shed','Temporary fabrication shed','GI-sheet shed','Temporary truss','Site office / storage shed','Access / working platform','Pipe / equipment support','Temporary frame / bracing','Temporary barrier / fencing','Industrial steel building','Warehouse shed','Roof truss','Portal frame','Platform / walkway'];
+const CODES=[
+['IS 800:2007','General Construction in Steel — Code of Practice','Verify amendments','Not used in any calculation yet'],
+['IS 2062','Hot-rolled structural steel — material requirements','Verify current part/edition/grade','Not used'],
+['IS 808','Dimensions & properties of hot-rolled beam, column, channel, angle sections','Verify edition','Seed section masses must be checked against it'],
+['IS 801','Cold-formed light-gauge steel structural members','Verify edition','Not used'],
+['IS 875 (Parts 1,2,3,5)','Dead, imposed, wind and special loads / combinations','Verify editions','Load calculations NOT implemented'],
+['IS 1893 (Part 1)','Earthquake-resistant design criteria','Verify edition','Not used'],
+['IS 4000','High-strength bolting in steel structures','Verify edition','Not used'],
+['IS 4923 / IS 1161','Hollow sections / steel tubes for structural use','Verify editions','Geometric mass estimate only'],
+['IS 814 / 816 / 9595','Electrodes and metal-arc welding','Verify editions','Not used'],
+['IRC:24 / IRC:22 and bridge codes','Bridge steelwork — separate workflow only','Not implemented','Bridge design is out of scope'] ];
+let S=load(),tab='project',lib=[],libQ='',libIssues=[];
+function blankProject(){return{id:'P'+Date.now().toString(36),info:{name:'New shed project',code:'',client:'',contractor:'',location:'',kind:'temporary',struct:'GI-sheet shed',life:'',engineer:'',reviewer:'',codeEdition:''},
+geo:{length:'',width:'',eaves:'',ridge:'',overhang:'0',openingsArea:'0'},env:{windSpeed:'',windSource:'',terrain:'',topo:''},
+cfg:{incRoof:true,incWall:true,paintSqmPerMT:'',fastenerPerSqm:''},rates:{supply:'',fabrication:'',paint:'',sheet:'',erection:'',transport:'',gstPct:''},members:[],plates:[],custom:[]}}
+function load(){try{const s=JSON.parse(localStorage.getItem(KEY));if(s&&s.projects&&s.projects.length)return s}catch(e){}return{projects:[blankProject()],cur:0}}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){alert('Could not save locally: '+e.message)}}
+const P=()=>S.projects[S.cur];
+function buildLib(){lib=[];
+SS_SEED.catalogue.forEach(([d,t,m])=>lib.push({designation:d,type:t,mass:m,source:'Catalogue value from IS 808 tables (entered manually)',standard:'IS 808',status:'UNVERIFIED — check against IS 808 / mill catalogue'}));
+SS_SEED.geometric.forEach(([t,l,dims,tpl])=>{const d={};dims.forEach(([k,v])=>d[k]=v);const name=tpl.replace(/\{(\w+)\}/g,(_,k)=>d[k]);
+ lib.push({designation:name,type:t,mass:E.massPerMeter(t,d),source:'Computed from dimensions × 7850 kg/m³'+(['shs','rhs','angle'].includes(t)?' (ignores corner radii/fillets — slight overestimate)':''),standard:'—',status:'Geometric estimate — not a catalogue value'})});
+P().custom.forEach(c=>lib.push(c));}
+const find=d=>lib.find(x=>x.designation===d);
+function status(){const p=P(),ge=E.validateGeometry(p.geo),mw=E.memberWeights(p.members.map(m=>({...m,unitMass:(find(m.section)||{}).mass,category:(find(m.section)||{}).type})));const miss=[];
+ if(ge.length)miss.push('Geometry');if(!p.members.length)miss.push('Members');if(mw.errors.length)miss.push('Member errors');
+ const st=miss.length?'Incomplete':'Preliminary';const el=$('#status');el.textContent=st;el.className='tag '+(st==='Incomplete'?'t-bad':'t-warn');return{st,miss}}
+function F(path,label,type='text',extra=''){const[o,k]=path.split('.');return`<div><label>${label}</label><input type="${type}" ${type==='number'?'step="any" inputmode="decimal"':''} data-p="${path}" value="${esc(P()[o][k])}" ${extra}></div>`}
+function view(){buildLib();const a=$('#app');status();
+ const f={project:vProject,sections:vSections,members:vMembers,plates:vPlates,boq:vBoq,codes:vCodes,about:vAbout}[tab];a.innerHTML=f();bind();
+ $('#nav').innerHTML=[['project','Project'],['sections','Sections'],['members','Members'],['plates','Plates'],['boq','BOQ'],['codes','Codes'],['about','Status']].map(([k,l])=>`<button class="${tab===k?'on':''}" data-t="${k}">${l}</button>`).join('');
+ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{tab=b.dataset.t;view();scrollTo(0,0)})}
+function bind(){document.querySelectorAll('[data-p]').forEach(i=>i.onchange=()=>{const[o,k]=i.dataset.p.split('.');P()[o][k]=i.type==='checkbox'?i.checked:i.value;save();if(tab==='project'||tab==='boq')view();else status()});
+ document.querySelectorAll('[data-act]').forEach(b=>b.onclick=()=>acts[b.dataset.act](b.dataset.i))}
+function vProject(){const p=P();
+ return`<div class="banner">Phase 1 tool: quantities and cost are <b>preliminary</b>. No structural design check (IS 800), load or truss calculation is implemented. Not a design approval.</div>
+ <div class="card"><h2>Projects</h2><select id="sel">${S.projects.map((x,i)=>`<option value="${i}" ${i===S.cur?'selected':''}>${esc(x.info.name)}</option>`).join('')}</select>
+ <div class="row"><button data-act="new">+ New</button><button class="sec" data-act="dup">Duplicate</button><button class="sec" data-act="exp">Export JSON</button><button class="sec" data-act="imp">Import JSON</button><button class="danger" data-act="del">Delete</button></div><input type="file" id="jf" accept=".json" hidden></div>
+ <div class="card"><h2>Project information</h2><div class="grid">${F('info.name','Project name')}${F('info.code','Project ID')}${F('info.client','Client')}${F('info.contractor','Contractor')}${F('info.location','Site location')}
+ <div><label>Type</label><select data-p="info.kind"><option ${p.info.kind==='temporary'?'selected':''} value="temporary">Temporary</option><option ${p.info.kind==='permanent'?'selected':''} value="permanent">Permanent</option></select></div>
+ <div><label>Structure type</label><select data-p="info.struct">${STRUCT.map(s=>`<option ${p.info.struct===s?'selected':''}>${s}</option>`).join('')}</select></div>
+ ${F('info.life','Design life / use duration')}${F('info.codeEdition','Design code & edition (to be verified)')}${F('info.engineer','Design engineer')}${F('info.reviewer','Reviewer')}</div></div>
+ <div class="card"><h2>Geometry (m)</h2><div class="grid">${F('geo.length','Length','number')}${F('geo.width','Width / span','number')}${F('geo.eaves','Eaves height','number')}${F('geo.ridge','Ridge height (≥ eaves)','number')}${F('geo.overhang','Roof overhang','number')}${F('geo.openingsArea','Openings area (sqm)','number')}</div>
+ <div class="row"><span class="mut">Eaves presets:</span><button class="sec" data-act="h3">3 m</button><button class="sec" data-act="h6">6 m</button></div><div class="msg mut">Presets only fill the eaves height. They are not pre-approved safe designs.</div></div>
+ <div class="card"><h2>Environment (recorded, not yet used)</h2><div class="grid">${F('env.windSpeed','Basic wind speed (m/s)','number')}${F('env.windSource','Wind speed source')}${F('env.terrain','Terrain category')}${F('env.topo','Topography factor')}</div>
+ <div class="msg warn">No default wind speed is assigned. Load calculations are planned for Phase 2.</div></div>`}
+function vSections(){const q=libQ.toLowerCase();const rows=lib.filter(s=>!q||(s.designation+' '+s.type).toLowerCase().includes(q));
+ return`<div class="card"><h2>Section library (${lib.length})</h2><input id="q" placeholder="Search e.g. ISMB 200, SHS, flat" value="${esc(libQ)}">
+ <div class="row"><button class="sec" data-act="impcsv">Import CSV</button><button class="sec" data-act="tpl">CSV template</button><input type="file" id="cf" accept=".csv" hidden></div>
+ ${libIssues.map(i=>`<div class="msg warn">${esc(i)}</div>`).join('')}</div>
+ <div class="card wrap"><table><tr><th>Designation</th><th>Type</th><th class="num">kg/m</th><th>Status / source</th></tr>${rows.map(s=>`<tr><td>${esc(s.designation)}</td><td>${esc(CATS[s.type]||s.type)}</td><td class="num">${s.mass.toFixed(2)}</td><td class="${/UNVERIF|estimate|pending/.test(s.status)?'warn':''}">${esc(s.status)}<br><span class="mut">${esc(s.source)}</span></td></tr>`).join('')}</table></div>
+ <div class="card"><h2>Add custom section</h2><div class="grid"><div><label>Designation</label><input id="cd"></div><div><label>Mass (kg/m)</label><input id="cm" type="number" step="any"></div><div><label>Source / note</label><input id="cs"></div></div><div class="row"><button data-act="addcustom">Add</button></div><div id="cerr" class="msg bad"></div></div>`}
+function vMembers(){const p=P(),mw=E.memberWeights(p.members.map(m=>({...m,unitMass:(find(m.section)||{}).mass,category:(find(m.section)||{}).type})));
+ const errs=Object.fromEntries(mw.errors.map(e=>[e.row,e.messages]));const byMark=Object.fromEntries(mw.rows.map(r=>[r.mark,r]));
+ return`<div class="card"><h2>Member schedule</h2><div class="wrap"><table><tr><th>Mark</th><th>Grid</th><th>Section</th><th>Length m</th><th>Qty</th><th>Cut allow. mm</th><th>Scrap %</th><th class="num">Net kg</th><th class="num">Gross kg</th><th></th></tr>
+ ${p.members.map((m,i)=>`<tr><td><input data-m="${i}.mark" value="${esc(m.mark)}"></td><td><input data-m="${i}.grid" value="${esc(m.grid)}"></td>
+ <td><select data-m="${i}.section"><option value="">— select —</option>${lib.map(s=>`<option ${m.section===s.designation?'selected':''}>${esc(s.designation)}</option>`).join('')}</select></td>
+ <td><input type="number" step="any" data-m="${i}.length" value="${esc(m.length)}"></td><td><input type="number" data-m="${i}.qty" value="${esc(m.qty)}"></td>
+ <td><input type="number" step="any" data-m="${i}.cutAllow" value="${esc(m.cutAllow)}"></td><td><input type="number" step="any" data-m="${i}.scrapPct" value="${esc(m.scrapPct)}"></td>
+ <td class="num">${byMark[m.mark]&&!errs[i+1]?byMark[m.mark].netKg.toFixed(1):'—'}</td><td class="num">${byMark[m.mark]&&!errs[i+1]?byMark[m.mark].grossKg.toFixed(1):'—'}</td><td><button class="sec" data-act="delm" data-i="${i}">✕</button></td></tr>
+ ${errs[i+1]?`<tr><td colspan="10" class="bad">${errs[i+1].map(esc).join('; ')}</td></tr>`:''}`).join('')||'<tr><td colspan="10" class="mut">No members yet.</td></tr>'}</table></div>
+ <div class="row"><button data-act="addm">+ Add member</button></div><div class="msg mut">Cutting allowance is per piece in mm; scrap % is applied on top for gross (purchase) weight. Both default to 0 — set them per your own fabrication rules.</div></div>`}
+function vPlates(){const p=P(),pw=E.plateWeights(p.plates);const e=Object.fromEntries(pw.errors.map(x=>[x.row,1]));let k=0;
+ return`<div class="card"><h2>Plate schedule (mm)</h2><div class="wrap"><table><tr><th>Mark</th><th>Length</th><th>Width</th><th>Thk</th><th>Qty</th><th class="num">Total kg</th><th></th></tr>
+ ${p.plates.map((x,i)=>`<tr><td><input data-pl="${i}.mark" value="${esc(x.mark)}"></td>${['len','wid','thk','qty'].map(f=>`<td><input type="number" step="any" data-pl="${i}.${f}" value="${esc(x[f])}"></td>`).join('')}<td class="num ${e[i+1]?'bad':''}">${e[i+1]?'invalid':pw.rows[k++].totalKg.toFixed(1)}</td><td><button class="sec" data-act="delp" data-i="${i}">✕</button></td></tr>`).join('')||'<tr><td colspan="7" class="mut">No plates yet.</td></tr>'}</table></div>
+ <div class="row"><button data-act="addp">+ Add plate</button></div><div class="msg mut">Plates are counted separately from the member schedule — do not also enter them as members.</div></div>`}
+function calc(){const p=P(),mw=E.memberWeights(p.members.map(m=>({...m,unitMass:(find(m.section)||{}).mass,category:(find(m.section)||{}).type})));
+ const pw=E.plateWeights(p.plates),ms=E.summarise(mw.rows),pk=pw.rows.reduce((s,r)=>s+r.totalKg,0);const cl=E.claddingAreas(p.geo);
+ const steelKg=ms.grossKg+pk,t=steelKg/1000;const sheet=cl.ok?(p.cfg.incRoof?cl.roofArea:0)+(p.cfg.incWall?cl.wallNet:0):0;
+ const hasPaint=p.cfg.paintSqmPerMT!=='',paintSqm=hasPaint?t*parseFloat(p.cfg.paintSqmPerMT):0;
+ const fast=p.cfg.fastenerPerSqm!==''?Math.ceil(sheet*parseFloat(p.cfg.fastenerPerSqm)):null;
+ const c=E.cost({steelTonnes:t,paintSqm,sheetSqm:sheet},p.rates);return{mw,pw,ms,pk,cl,steelKg,t,sheet,paintSqm,hasPaint,fast,c}}
+const f2=(v,d=2)=>Number(v).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d});
+function vBoq(){const p=P(),k=calc(),st=status();
+ return`<div class="card"><h2>Dashboard</h2><span class="tag ${st.st==='Incomplete'?'t-bad':'t-warn'}">${st.st}</span> <span class="msg mut">Not design-verified • not approved by an authorized engineer</span>
+ <div class="grid" style="margin-top:8px"><div><label>Members net (kg)</label><div class="kpi">${f2(k.ms.netKg,1)}</div></div><div><label>Steel gross incl. plates (MT)</label><div class="kpi">${f2(k.t,3)}</div></div>
+ <div><label>Roof area (sqm)</label><div class="kpi">${k.cl.ok?f2(k.cl.roofArea,1):'—'}</div></div><div><label>Wall net (sqm)</label><div class="kpi">${k.cl.ok?f2(k.cl.wallNet,1):'—'}</div></div></div>
+ ${!k.cl.ok?k.cl.errors.map(e=>`<div class="msg bad">Geometry: ${esc(e)}</div>`).join(''):`<div class="msg mut">Roof pitch ≈ ${f2(k.cl.slopeAngleDeg,1)}°. ${esc(k.cl.notes[0])}</div>`}
+ ${k.mw.errors.map(e=>`<div class="msg bad">Member ${esc(e.mark||'#'+e.row)}: ${e.messages.map(esc).join('; ')}</div>`).join('')}
+ ${Object.entries(k.ms.byCategory).map(([c,v])=>`<div class="msg">${esc(CATS[c]||c||'Unassigned')}: ${f2(v,1)} kg net</div>`).join('')}</div>
+ <div class="card"><h2>Quantity settings</h2><div class="grid">
+ <div><label><input type="checkbox" style="width:auto" data-p="cfg.incRoof" ${p.cfg.incRoof?'checked':''}> Include roof sheeting</label></div><div><label><input type="checkbox" style="width:auto" data-p="cfg.incWall" ${p.cfg.incWall?'checked':''}> Include wall cladding</label></div>
+ ${F('cfg.paintSqmPerMT','Paint area (sqm per MT steel) — your value','number')}${F('cfg.fastenerPerSqm','Cladding fasteners per sqm — your value','number')}</div>
+ <div class="msg mut">Paint area and fastener density are user inputs; nothing is assumed.${k.fast!=null?` Fasteners: ${k.fast} nos.`:''}</div></div>
+ <div class="card"><h2>Rates (₹) — enter your own</h2><div class="grid">${F('rates.supply','Steel supply /MT','number')}${F('rates.fabrication','Fabrication /MT','number')}${F('rates.paint','Prep + paint /sqm','number')}${F('rates.sheet','GI sheeting /sqm','number')}${F('rates.erection','Erection /MT','number')}${F('rates.transport','Transport /MT','number')}${F('rates.gstPct','GST %','number')}</div></div>
+ <div class="card wrap"><h2>Preliminary cost</h2><table><tr><th>Item</th><th class="num">Qty</th><th>Unit</th><th class="num">Rate</th><th class="num">Amount ₹</th></tr>
+ ${k.c.items.map(i=>`<tr><td>${esc(i.name)}</td><td class="num">${f2(i.qty,3)}</td><td>${i.unit}</td><td class="num">${i.rate==null?'<span class="warn">rate missing</span>':f2(i.rate)}</td><td class="num">${i.amount==null?'—':f2(i.amount)}</td></tr>`).join('')}
+ <tr><th colspan="4">Subtotal</th><th class="num">${f2(k.c.subtotal)}</th></tr><tr><td colspan="4">GST ${k.c.gstPct}%</td><td class="num">${f2(k.c.gst)}</td></tr><tr><th colspan="4">Total (excl. items with missing rates)</th><th class="num">${f2(k.c.total)}</th></tr></table>
+ ${k.c.missing.length?`<div class="msg warn">Total is incomplete — missing rates: ${k.c.missing.map(esc).join(', ')}</div>`:''}
+ ${!k.hasPaint?'<div class="msg warn">Paint quantity is zero because paint area per MT is not entered.</div>':''}
+ <div class="row"><button data-act="csvboq">Download BOQ CSV</button><button class="sec" data-act="csvcut">Cutting list CSV</button><button class="sec" data-act="csvplate">Plate schedule CSV</button></div></div>`}
+function vCodes(){return`<div class="card wrap"><h2>Code register</h2><div class="banner">Editions and clauses have <b>not</b> been verified against official BIS publications in this release. Obtain licensed copies; the app does not reproduce standards.</div>
+ <table><tr><th>Reference</th><th>Scope</th><th>Verification</th><th>Use in this app</th></tr>${CODES.map(c=>`<tr><td>${c[0]}</td><td style="white-space:normal">${c[1]}</td><td class="warn">${c[2]}</td><td style="white-space:normal">${c[3]}</td></tr>`).join('')}</table></div>`}
+function vAbout(){const rows=[['Responsive PWA, offline after first load','Implemented'],['Project wizard (info, geometry, 3 m / 6 m eaves presets)','Implemented'],['Section library: search, custom, CSV import with validation','Implemented'],['Library data: ISMB/ISMC masses (unverified), geometric sections','Partial — verify / import approved data'],['ISWB, ISHB, T, built-up, purlins, bolts, welding consumables','Planned'],['Member schedule, plate schedule, weights, cladding areas','Implemented'],['BOQ + cost with user rates, CSV export','Implemented'],['Bolt/connection schedule, drawing register, erection checklist','Planned'],['Load calculations (IS 875), truss solver','Planned (Phase 2)'],['Member checks (IS 800), shed stability','Planned (Phase 3)'],['Authentication / cloud storage','Planned (Phase 5)']];
+ return`<div class="card wrap"><h2>Feature status</h2><table>${rows.map(r=>`<tr><td style="white-space:normal">${r[0]}</td><td><b>${r[1]}</b></td></tr>`).join('')}</table></div>
+ <div class="card"><h2>Disclaimer</h2><div class="msg">Outputs are preliminary estimates for planning. They are not a structural design, do not verify any limit state, and must be reviewed by a qualified engineer before use. Engine v${E.VERSION}. Data stays in this browser (local storage); export JSON for backup.</div></div>`}
+function dl(name,text,type='text/csv'){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+const acts={
+new(){S.projects.push(blankProject());S.cur=S.projects.length-1;save();view()},
+dup(){const c=JSON.parse(JSON.stringify(P()));c.id='P'+Date.now().toString(36);c.info.name+=' (copy)';S.projects.push(c);S.cur=S.projects.length-1;save();view()},
+del(){if(!confirm('Delete project "'+P().info.name+'"? This cannot be undone.'))return;S.projects.splice(S.cur,1);if(!S.projects.length)S.projects.push(blankProject());S.cur=0;save();view()},
+exp(){dl((P().info.code||P().id)+'.steelstruct.json',JSON.stringify(P(),null,1),'application/json')},
+imp(){$('#jf').click()},
+h3(){P().geo.eaves='3';save();view()},h6(){P().geo.eaves='6';save();view()},
+addm(){P().members.push({mark:'M'+(P().members.length+1),grid:'',section:'',length:'',qty:'1',cutAllow:'',scrapPct:''});save();view()},
+delm(i){if(!confirm('Delete this member row?'))return;P().members.splice(i,1);save();view()},
+addp(){P().plates.push({mark:'PL'+(P().plates.length+1),len:'',wid:'',thk:'',qty:'1'});save();view()},
+delp(i){if(!confirm('Delete this plate row?'))return;P().plates.splice(i,1);save();view()},
+impcsv(){$('#cf').click()},
+tpl(){dl('sections-template.csv','designation,type,mass_kg_per_m,area_mm2,source,standard\r\nISMB 200,ismb,25.4,3233,<your catalogue>,IS 808\r\n')},
+addcustom(){const d=$('#cd').value.trim(),m=parseFloat($('#cm').value),s=$('#cs').value.trim(),er=$('#cerr');
+ if(!d||!(m>0)){er.textContent='Designation and mass > 0 are required.';return}if(find(d)){er.textContent='Designation already exists.';return}
+ P().custom.push({designation:d,type:'custom',mass:m,source:s||'User entered',standard:'—',status:'Custom — user responsibility'});save();view()},
+csvboq(){const k=calc(),r=[['Project',P().info.name],['Status','Preliminary — not design verified'],[],['Mark','Grid','Section','Length m','Qty','Unit kg/m','Net kg','Gross kg (cut+scrap)']];
+ k.mw.rows.forEach(x=>r.push([x.mark,x.grid,x.section,x.length,x.qty,x.unitMass,x.netKg.toFixed(2),x.grossKg.toFixed(2)]));
+ r.push([],['Plates kg','','','','','','',k.pk.toFixed(2)],['Steel total MT','','','','','','',k.t.toFixed(3)],[],['Item','Qty','Unit','Rate','Amount']);
+ k.c.items.forEach(i=>r.push([i.name,i.qty.toFixed(3),i.unit,i.rate??'RATE MISSING',i.amount==null?'':i.amount.toFixed(2)]));r.push(['Subtotal','','','',k.c.subtotal.toFixed(2)],['GST %','','','',k.c.gstPct],['Total','','','',k.c.total.toFixed(2)]);
+ dl('BOQ_'+(P().info.code||'project')+'.csv','﻿'+E.toCSV(r))},
+csvcut(){const k=calc(),r=[['Mark','Grid','Section','Cut length m','Qty']];k.mw.rows.forEach(x=>r.push([x.mark,x.grid,x.section,x.cutLength.toFixed(3),x.qty]));dl('cutting_list.csv','﻿'+E.toCSV(r))},
+csvplate(){const k=calc(),r=[['Mark','L mm','W mm','t mm','Qty','Unit kg','Total kg']];k.pw.rows.forEach(x=>r.push([x.mark,x.len,x.wid,x.thk,x.qty,x.unitKg.toFixed(2),x.totalKg.toFixed(2)]));dl('plate_schedule.csv','﻿'+E.toCSV(r))}};
+document.addEventListener('change',e=>{const t=e.target;
+ if(t.id==='sel'){S.cur=+t.value;save();view()}
+ if(t.id==='jf'&&t.files[0])t.files[0].text().then(x=>{try{const p=JSON.parse(x);if(!p.info||!p.geo||!Array.isArray(p.members))throw 0;p.id='P'+Date.now().toString(36);S.projects.push(p);S.cur=S.projects.length-1;save();view()}catch(_){alert('Not a valid SteelStruct project file.')}});
+ if(t.id==='cf'&&t.files[0])t.files[0].text().then(x=>{const r=E.importSections(x);libIssues=r.issues;if(r.ok)r.rows.forEach(s=>{if(!find(s.designation))P().custom.push({designation:s.designation,type:s.type||'custom',mass:s.mass,source:s.source||'CSV import',standard:s.standard||'—',status:s.status})});save();view()});
+ for(const[a,arr]of[['m','members'],['pl','plates']]){const v=t.dataset[a];if(v){const[i,k]=v.split('.');P()[arr][+i][k]=t.value;save();view()}}});
+document.addEventListener('input',e=>{if(e.target.id==='q'){libQ=e.target.value;const pos=e.target.selectionStart;view();const q=$('#q');q.focus();q.setSelectionRange(pos,pos)}});
+const setNet=()=>$('#net').textContent=navigator.onLine?'online':'offline — saved projects & estimating work';addEventListener('online',setNet);addEventListener('offline',setNet);setNet();
+if('serviceWorker'in navigator)addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));
+view();
+</script></body></html>
