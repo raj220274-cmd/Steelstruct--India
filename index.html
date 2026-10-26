@@ -55,7 +55,7 @@ function buildLib(){lib=[];
 SS_SEED.catalogue.forEach(([d,t,m])=>lib.push({designation:d,type:t,mass:m,source:'Catalogue value from IS 808 tables (entered manually)',standard:'IS 808',status:'UNVERIFIED — check against IS 808 / mill catalogue'}));
 SS_SEED.geometric.forEach(([t,l,dims,tpl])=>{const d={};dims.forEach(([k,v])=>d[k]=v);const name=tpl.replace(/\{(\w+)\}/g,(_,k)=>d[k]);
  lib.push({designation:name,type:t,mass:E.massPerMeter(t,d),source:'Computed from dimensions × 7850 kg/m³'+(['shs','rhs','angle'].includes(t)?' (ignores corner radii/fillets — slight overestimate)':''),standard:'—',status:'Geometric estimate — not a catalogue value'})});
-P().custom.forEach(c=>lib.push(c));}
+P().custom.forEach(c=>{const i=lib.findIndex(x=>x.designation===c.designation);if(i>=0)lib[i]=c;else lib.push(c)});}
 const find=d=>lib.find(x=>x.designation===d);
 function status(){const p=P(),ge=E.validateGeometry(p.geo),mw=E.memberWeights(p.members.map(m=>({...m,unitMass:(find(m.section)||{}).mass,category:(find(m.section)||{}).type})));const miss=[];
  if(ge.length)miss.push('Geometry');if(!p.members.length)miss.push('Members');if(mw.errors.length)miss.push('Member errors');
@@ -156,7 +156,7 @@ csvplate(){const k=calc(),r=[['Mark','L mm','W mm','t mm','Qty','Unit kg','Total
 document.addEventListener('change',e=>{const t=e.target;
  if(t.id==='sel'){S.cur=+t.value;save();view()}
  if(t.id==='jf'&&t.files[0])t.files[0].text().then(x=>{try{const p=JSON.parse(x);if(!p.info||!p.geo||!Array.isArray(p.members))throw 0;p.id='P'+Date.now().toString(36);S.projects.push(p);S.cur=S.projects.length-1;save();view()}catch(_){alert('Not a valid SteelStruct project file.')}});
- if(t.id==='cf'&&t.files[0])t.files[0].text().then(x=>{const r=E.importSections(x);libIssues=r.issues;if(r.ok)r.rows.forEach(s=>{if(!find(s.designation))P().custom.push({designation:s.designation,type:s.type||'custom',mass:s.mass,source:s.source||'CSV import',standard:s.standard||'—',status:s.status})});save();view()});
+ if(t.id==='cf'&&t.files[0])t.files[0].text().then(x=>{const r=E.importSections(x);libIssues=r.issues;if(r.ok)r.rows.forEach(s=>{const old=find(s.designation);const e={designation:s.designation,type:s.type||'custom',mass:s.mass,source:s.source||'CSV import',standard:s.standard||'—',status:s.status};const ci=P().custom.findIndex(c=>c.designation===s.designation);if(ci>=0)P().custom[ci]=e;else P().custom.push(e);if(old&&old.mass!==s.mass)libIssues.push('Replaced '+s.designation+': '+old.mass.toFixed(2)+' → '+s.mass.toFixed(2)+' kg/m');else if(old)libIssues.push('Replaced '+s.designation+' (same mass '+s.mass.toFixed(2)+' kg/m), now marked as imported')});save();view()});
  for(const[a,arr]of[['m','members'],['pl','plates']]){const v=t.dataset[a];if(v){const[i,k]=v.split('.');P()[arr][+i][k]=t.value;save();view()}}});
 document.addEventListener('input',e=>{if(e.target.id==='q'){libQ=e.target.value;const pos=e.target.selectionStart;view();const q=$('#q');q.focus();q.setSelectionRange(pos,pos)}});
 const setNet=()=>$('#net').textContent=navigator.onLine?'online':'offline — saved projects & estimating work';addEventListener('online',setNet);addEventListener('offline',setNet);setNet();
